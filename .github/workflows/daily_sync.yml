@@ -1,0 +1,46 @@
+name: Daily IPO Data Sync
+
+on:
+  schedule:
+    # 04:30 UTC = 10:00 AM IST (Monday to Friday)
+    - cron: '30 4 * * 1-5'
+    # 11:30 UTC = 05:00 PM IST (Monday to Friday, market close)
+    - cron: '30 11 * * 1-5'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Live IPO Scraper & Decision Engine
+        run: |
+          python scripts/sync_data.py
+
+      - name: Commit & Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/ipo_advisor.db src/seed_data.py
+          if git diff --staged --quiet; then
+            echo "No IPO data changes detected."
+          else
+            git commit -m "chore(data): automated daily IPO data sync [skip ci]"
+            git push origin main
+          fi

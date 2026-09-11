@@ -217,6 +217,19 @@
         } else {
           document.getElementById('refresh-icon').classList.remove('fa-spin');
         }
+
+        // Auto-refresh daily if data is older than 18 hours
+        if (data.last_updated && !data.is_syncing && !window._hasAutoRefreshed) {
+          try {
+            const lastDate = new Date(data.last_updated.replace(' ', 'T'));
+            const hoursAgo = (Date.now() - lastDate.getTime()) / (1000 * 60 * 60);
+            if (hoursAgo > 18 || isNaN(hoursAgo)) {
+              window._hasAutoRefreshed = true;
+              console.log("Data is older than 18 hours, automatically refreshing live IPO data...");
+              triggerRefresh();
+            }
+          } catch (_) {}
+        }
       } catch (e) {
         console.error("Failed to fetch status:", e);
       }
