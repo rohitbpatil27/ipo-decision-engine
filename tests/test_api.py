@@ -39,15 +39,28 @@ class TestAPI(unittest.TestCase):
         self.assertEqual(r_root.status_code, 200)
         self.assertIn("IPO Advisor", r_root.text)
 
-        # Vercel entrypoint path
-        r_vercel = self.client.get("/api/index.py")
-        self.assertEqual(r_vercel.status_code, 200)
-        self.assertIn("IPO Advisor", r_vercel.text)
+        r_index = self.client.get("/index.html")
+        self.assertEqual(r_index.status_code, 200)
+        self.assertIn("IPO Advisor", r_index.text)
 
-        # Catch-all SPA path
-        r_spa = self.client.get("/dashboard")
-        self.assertEqual(r_spa.status_code, 200)
-        self.assertIn("IPO Advisor", r_spa.text)
+    def test_standalone_endpoints(self):
+        from api.ipos import app as ipos_app
+        from api.status import app as status_app
+        from api.refresh import app as refresh_app
+
+        ipos_client = TestClient(ipos_app)
+        r_ipos = ipos_client.get("/api/ipos")
+        self.assertEqual(r_ipos.status_code, 200)
+        self.assertIsInstance(r_ipos.json(), list)
+
+        status_client = TestClient(status_app)
+        r_status = status_client.get("/api/status")
+        self.assertEqual(r_status.status_code, 200)
+        self.assertIn("status", r_status.json())
+
+        refresh_client = TestClient(refresh_app)
+        r_refresh = refresh_client.post("/api/refresh")
+        self.assertEqual(r_refresh.status_code, 200)
 
     def test_route_aliases(self):
         # Without /api prefix

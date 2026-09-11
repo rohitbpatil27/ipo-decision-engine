@@ -161,8 +161,6 @@ def get_system_status():
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/index.html", response_class=HTMLResponse)
-@app.get("/api/index.py", response_class=HTMLResponse)
-@app.get("/api/index", response_class=HTMLResponse)
 def serve_index():
     """Serves the Zerodha-style IPO dashboard frontend"""
     return HTMLResponse(content=_get_index_content())
@@ -170,8 +168,3 @@ def serve_index():
 # Mount static frontend directory if available
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
-
-# Catch-all GET route for Single Page Application routing (avoids 404s on Vercel rewrites)
-@app.get("/{full_path:path}", response_class=HTMLResponse)
-def catch_all(full_path: str):
-    return HTMLResponse(content=_get_index_content())
