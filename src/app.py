@@ -128,12 +128,20 @@ def get_ipo_detail(ipo_id: int):
 def trigger_refresh(background_tasks: BackgroundTasks):
     """
     Triggers an immediate live scraping and re-calculation cycle online.
+    On Vercel serverless, runs synchronously so execution completes before lambda freezes.
     """
     if scheduler.is_syncing:
         return {"status": "in_progress", "message": "Synchronization is already running."}
     
-    background_tasks.add_task(scheduler._do_sync)
-    return {"status": "started", "message": "Live IPO data refresh initiated."}
+    if IS_VERCEL:
+        try:
+            scheduler._do_sync()
+            return {"status": "success", "message": "Live IPO data refresh completed."}
+        except Exception as e:
+            return {"status": "error", "message": f"Sync failed: {e}"}
+    else:
+        background_tasks.add_task(scheduler._do_sync)
+        return {"status": "started", "message": "Live IPO data refresh initiated."}
 
 @app.get("/api/status")
 @app.get("/status")

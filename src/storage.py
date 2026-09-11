@@ -5,8 +5,9 @@ from src.config import DB_PATH
 from src.models import IPODetail, StatusType, BookWisdomAnalysis
 
 class Storage:
-    def __init__(self, db_path=DB_PATH):
+    def __init__(self, db_path=DB_PATH, auto_seed: bool = True):
         self.db_path = str(db_path)
+        self.auto_seed = auto_seed
         self.init_db()
 
     def _get_connection(self):
@@ -59,6 +60,72 @@ class Storage:
                 cursor.execute("ALTER TABLE ipos ADD COLUMN book_wisdom_json TEXT")
 
             conn.commit()
+
+            # Automatically seed database on cold-start if table is empty
+            if self.auto_seed:
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM ipos")
+                    if cursor.fetchone()[0] == 0:
+                        self._seed_default_data(conn)
+                except Exception as e:
+                    print(f"Notice: Initial seed check: {e}")
+
+    def _seed_default_data(self, conn=None):
+        """Seeds SQLite database from bundled Python seed data on fresh deployment"""
+        try:
+            from src.seed_data import SEED_IPOS
+            from src.models import IPODetail
+            should_close = False
+            if conn is None:
+                conn = self._get_connection()
+                should_close = True
+
+            cursor = conn.cursor()
+            for item in SEED_IPOS:
+                ipo = IPODetail(**item)
+                cursor.execute("""
+                    INSERT INTO ipos (
+                        id, name, slug, category, status, price, price_band,
+                        lot_size, issue_size_cr, fresh_issue_cr, ofs_cr, ofs_ratio_pct,
+                        open_date, close_date, allotment_date, listing_date,
+                        fundamentals_json, financials_json, hype_json, decision_json,
+                        book_wisdom_json, updated_at, source_url
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        status=excluded.status,
+                        decision_json=excluded.decision_json,
+                        hype_json=excluded.hype_json,
+                        updated_at=excluded.updated_at
+                """, (
+                    ipo.id,
+                    ipo.name,
+                    ipo.slug,
+                    ipo.category,
+                    ipo.status.value,
+                    ipo.price,
+                    ipo.price_band,
+                    ipo.lot_size,
+                    ipo.issue_size_cr,
+                    ipo.fresh_issue_cr,
+                    ipo.ofs_cr,
+                    ipo.ofs_ratio_pct,
+                    ipo.open_date,
+                    ipo.close_date,
+                    ipo.allotment_date,
+                    ipo.listing_date,
+                    json.dumps(ipo.fundamentals.model_dump()),
+                    json.dumps([f.model_dump() for f in ipo.financials]),
+                    json.dumps(ipo.hype.model_dump()),
+                    json.dumps(ipo.decision.model_dump()),
+                    json.dumps(ipo.book_wisdom.model_dump()),
+                    ipo.updated_at,
+                    ipo.source_url
+                ))
+            conn.commit()
+            if should_close:
+                conn.close()
+        except Exception as e:
+            print(f"Warning: Auto-seed failed: {e}")
 
     def save_ipo(self, ipo: IPODetail):
         with self._get_connection() as conn:
@@ -122,57 +189,121 @@ class Storage:
             conn.commit()
 
     def get_all_ipos(self, status_filter: Optional[str] = None) -> List[IPODetail]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            if status_filter:
-                query = "SELECT * FROM ipos WHERE status = ? AND category = 'IPO' ORDER BY id DESC"
-                cursor.execute(query, (status_filter.upper(),))
-            else:
-                query = "SELECT * FROM ipos WHERE category = 'IPO' ORDER BY id DESC"
-                cursor.execute(query)
-            
-            rows = cursor.fetchall()
-            results = []
-            for r in rows:
-                results.append(self._row_to_model(r))
-            
-            if any(x.priority_rank is None for x in results):
-                from src.decision_engine import DecisionEngine
-                results = DecisionEngine.rank_ipos(results)
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                if self.auto_seed:
+                    cursor.execute("SELECT COUNT(*) FROM ipos")
+                    if cursor.fetchone()[0] == 0:
+                        self._seed_default_data(conn)
+
+                if status_filter:
+                    query = "SELECT * FROM ipos WHERE status = ? AND category = 'IPO' ORDER BY id DESC"
+                    cursor.execute(query, (status_filter.upper(),))
+                else:
+                    query = "SELECT * FROM ipos WHERE category = 'IPO' ORDER BY id DESC"
+                    cursor.execute(query)
                 
-            return results
+                rows = cursor.fetchall()
+                results = []
+                for r in rows:
+                    results.append(self._row_to_model(r))
+                
+                if any(x.priority_rank is None for x in results):
+                    from src.decision_engine import DecisionEngine
+                    results = DecisionEngine.rank_ipos(results)
+                    
+                if results or not self.auto_seed:
+                    return results
+        except Exception as e:
+            print(f"Database query failed, using in-memory seed fallback: {e}")
+
+        # In-memory fallback guaranteeing the UI is NEVER empty on fresh cloud cold starts
+        if self.auto_seed:
+            try:
+                from src.seed_data import SEED_IPOS
+                fallback = [IPODetail(**x) for x in SEED_IPOS]
+                if status_filter:
+                    fallback = [x for x in fallback if x.status.value == status_filter.upper()]
+                from src.decision_engine import DecisionEngine
+                return DecisionEngine.rank_ipos(fallback)
+            except Exception:
+                return []
+        return []
 
     def get_ipo_by_id(self, ipo_id: int) -> Optional[IPODetail]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM ipos WHERE id = ?", (ipo_id,))
-            row = cursor.fetchone()
-            if row:
-                return self._row_to_model(row)
-            return None
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM ipos WHERE id = ?", (ipo_id,))
+                row = cursor.fetchone()
+                if row:
+                    return self._row_to_model(row)
+        except Exception:
+            pass
+
+        if self.auto_seed:
+            try:
+                from src.seed_data import SEED_IPOS
+                for item in SEED_IPOS:
+                    if item.get("id") == ipo_id:
+                        return IPODetail(**item)
+            except Exception:
+                pass
+        return None
 
     def get_stats(self) -> Dict[str, Any]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM ipos WHERE category = 'IPO'")
-            total = cursor.fetchone()[0]
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM ipos WHERE category = 'IPO'")
+                total = cursor.fetchone()[0]
+                if total == 0 and self.auto_seed:
+                    self._seed_default_data(conn)
+                    cursor.execute("SELECT COUNT(*) FROM ipos WHERE category = 'IPO'")
+                    total = cursor.fetchone()[0]
 
-            cursor.execute("SELECT COUNT(*) FROM ipos WHERE category = 'IPO' AND status = 'OPEN'")
-            open_count = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM ipos WHERE category = 'IPO' AND status = 'OPEN'")
+                open_count = cursor.fetchone()[0]
 
-            cursor.execute("SELECT COUNT(*) FROM ipos WHERE category = 'IPO' AND status = 'UPCOMING'")
-            upcoming_count = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM ipos WHERE category = 'IPO' AND status = 'UPCOMING'")
+                upcoming_count = cursor.fetchone()[0]
 
-            cursor.execute("SELECT updated_at FROM ipos ORDER BY updated_at DESC LIMIT 1")
-            row = cursor.fetchone()
-            last_updated = row[0] if row else None
+                cursor.execute("SELECT updated_at FROM ipos ORDER BY updated_at DESC LIMIT 1")
+                row = cursor.fetchone()
+                last_updated = row[0] if row else None
 
-            return {
-                "total_mainboard_ipos": total,
-                "open_count": open_count,
-                "upcoming_count": upcoming_count,
-                "last_updated": last_updated
-            }
+                if total > 0 or not self.auto_seed:
+                    return {
+                        "total_mainboard_ipos": total,
+                        "open_count": open_count,
+                        "upcoming_count": upcoming_count,
+                        "last_updated": last_updated
+                    }
+        except Exception as e:
+            print(f"Stats query error: {e}")
+
+        if self.auto_seed:
+            try:
+                from src.seed_data import SEED_IPOS
+                total = len(SEED_IPOS)
+                open_count = sum(1 for x in SEED_IPOS if x.get("status") == "OPEN")
+                upcoming_count = sum(1 for x in SEED_IPOS if x.get("status") == "UPCOMING")
+                last_updated = SEED_IPOS[0].get("updated_at") if SEED_IPOS else None
+                return {
+                    "total_mainboard_ipos": total,
+                    "open_count": open_count,
+                    "upcoming_count": upcoming_count,
+                    "last_updated": last_updated
+                }
+            except Exception:
+                pass
+        return {
+            "total_mainboard_ipos": 0,
+            "open_count": 0,
+            "upcoming_count": 0,
+            "last_updated": None
+        }
 
     def _row_to_model(self, row: sqlite3.Row) -> IPODetail:
         cols = row.keys()

@@ -12,13 +12,20 @@ class TestStorage(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.db_path = Path(self.temp_dir.name) / "test.db"
-        self.storage = Storage(db_path=self.db_path)
+        self.storage = Storage(db_path=self.db_path, auto_seed=False)
 
     def tearDown(self):
         try:
             self.temp_dir.cleanup()
         except Exception:
             pass
+
+    def test_auto_seed_on_empty_db(self):
+        auto_storage = Storage(db_path=self.db_path, auto_seed=True)
+        ipos = auto_storage.get_all_ipos()
+        self.assertGreaterEqual(len(ipos), 15)
+        stats = auto_storage.get_stats()
+        self.assertGreaterEqual(stats["total_mainboard_ipos"], 15)
 
     def test_save_and_retrieve_ipo(self):
         ipo = IPODetail(
