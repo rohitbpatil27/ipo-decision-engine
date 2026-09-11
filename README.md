@@ -1,4 +1,4 @@
-﻿# IPO Decision Engine & Allotment Advisor
+# IPO Decision Engine & Allotment Advisor
 
 A high-performance, data-driven web application and quantitative advisory engine for **Indian Mainboard IPOs**. Built with a minimalist, high-contrast **Zerodha Kite** user interface, it provides unambiguous investment recommendations, **mathematical allotment probabilities**, and **priority ranking** based strictly on audited SEBI DRHP balance sheets and live market bidding.
 
