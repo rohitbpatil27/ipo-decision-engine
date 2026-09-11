@@ -5,7 +5,7 @@ from typing import Optional, List
 import os
 from pathlib import Path
 
-from src.config import FRONTEND_DIR, IS_VERCEL
+from src.config import FRONTEND_DIR, IS_VERCEL, BASE_DIR
 from src.storage import Storage
 from src.scraper import IPOScraper
 from src.scheduler import BackgroundScheduler
@@ -39,7 +39,26 @@ if not IS_VERCEL:
     def shutdown_event():
         scheduler.stop()
 
+from fastapi.responses import HTMLResponse
+
+def _get_index_content() -> str:
+    candidates = [
+        FRONTEND_DIR / "index.html",
+        BASE_DIR / "index.html",
+        Path("index.html"),
+        Path("frontend/index.html")
+    ]
+    for candidate in candidates:
+        try:
+            if candidate.exists():
+                with open(candidate, "r", encoding="utf-8") as f:
+                    return f.read()
+        except Exception:
+            pass
+    return "<h1>IPO Advisor</h1><p>Frontend loading...</p>"
+
 @app.get("/api")
+@app.get("/api/")
 def api_root():
     return {
         "app": "IPO Decision Engine API",
@@ -49,6 +68,7 @@ def api_root():
     }
 
 @app.get("/api/ipos", response_model=List[IPODetail])
+@app.get("/ipos", response_model=List[IPODetail])
 def list_ipos(
     status: Optional[str] = Query(None, description="Filter by status: open, upcoming, or all"),
     sort: Optional[str] = Query("date", description="Sort by: date, priority, sub, gmp_desc, score_desc")
@@ -92,6 +112,7 @@ def list_ipos(
     return ipos
 
 @app.get("/api/ipos/{ipo_id}", response_model=IPODetail)
+@app.get("/ipos/{ipo_id}", response_model=IPODetail)
 def get_ipo_detail(ipo_id: int):
     """
     Returns detailed IPO record including 3-year DRHP financials,
@@ -103,6 +124,7 @@ def get_ipo_detail(ipo_id: int):
     return ipo
 
 @app.post("/api/refresh")
+@app.post("/refresh")
 def trigger_refresh(background_tasks: BackgroundTasks):
     """
     Triggers an immediate live scraping and re-calculation cycle online.
@@ -114,6 +136,7 @@ def trigger_refresh(background_tasks: BackgroundTasks):
     return {"status": "started", "message": "Live IPO data refresh initiated."}
 
 @app.get("/api/status")
+@app.get("/status")
 def get_system_status():
     """
     Returns status of data synchronization, last updated timestamp,
@@ -128,19 +151,19 @@ def get_system_status():
         "stats": stats
     }
 
-from fastapi.responses import HTMLResponse
-
 @app.get("/", response_class=HTMLResponse)
+@app.get("/index.html", response_class=HTMLResponse)
+@app.get("/api/index.py", response_class=HTMLResponse)
+@app.get("/api/index", response_class=HTMLResponse)
 def serve_index():
     """Serves the Zerodha-style IPO dashboard frontend"""
-    index_file = FRONTEND_DIR / "index.html"
-    if not index_file.exists():
-        index_file = Path(__file__).resolve().parent.parent / "index.html"
-    if index_file.exists():
-        with open(index_file, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    return HTMLResponse(content="<h1>IPO Advisor</h1><p>Frontend loading...</p>")
+    return HTMLResponse(content=_get_index_content())
 
-# Mount static frontend directory
+# Mount static frontend directory if available
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
+
+# Catch-all GET route for Single Page Application routing (avoids 404s on Vercel rewrites)
+@app.get("/{full_path:path}", response_class=HTMLResponse)
+def catch_all(full_path: str):
+    return HTMLResponse(content=_get_index_content())
