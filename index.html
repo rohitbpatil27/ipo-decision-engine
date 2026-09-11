@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IPO Advisor | Straightforward Mainboard IPO Recommendations</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; color: #222222; }
+    .badge-green { background-color: #ebfbee; color: #2b8a3e; border: 1px solid #d3f9d8; }
+    .badge-purple { background-color: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe; }
+    .badge-amber { background-color: #fff8e1; color: #b78103; border: 1px solid #ffe082; }
+    .badge-red { background-color: #fff5f5; color: #c92a2a; border: 1px solid #ffe3e3; }
+    .card-ipo {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .card-ipo:hover {
+      border-color: #cbd5e1;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .tab-active {
+      color: #387ed1 !important;
+      border-bottom: 2px solid #387ed1 !important;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased flex flex-col">
+
+  <!-- Top Disclaimer Strip -->
+  <div class="bg-amber-50 border-b border-amber-200 px-4 py-1.5 text-[11px] text-amber-900">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+      <span><strong>Educational Research Only:</strong> Not SEBI-registered investment advice. IPOs involve market risk and GMP is unregulated. Perform independent due diligence before bidding.</span>
+      <span id="last-updated-text" class="text-amber-800/80 hidden sm:inline text-[10px]">Updated today</span>
+    </div>
+  </div>
+
+  <!-- Minimalist Navbar -->
+  <header class="bg-white border-b border-gray-200">
+    <div class="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <a href="/" class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
+            K
+          </div>
+          <span class="text-base font-bold text-gray-900">IPO Advisor</span>
+        </a>
+        <span class="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">Mainboard Only</span>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="refresh-btn" onclick="triggerRefresh()" class="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-colors">
+          <i id="refresh-icon" class="fa-solid fa-rotate text-[11px]"></i>
+          <span>Sync Live</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Clean Tabs & Filter -->
+  <div class="bg-white border-b border-gray-200">
+    <div class="max-w-5xl mx-auto px-4 flex flex-col md:flex-row md:items-center justify-between gap-2">
+      <!-- Tabs -->
+      <nav class="flex space-x-6 text-xs" aria-label="Tabs">
+        <button onclick="setStatusFilter('OPEN')" id="tab-open" class="py-3 px-1 border-b-2 font-medium tab-active transition-colors flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-green-500"></span>
+          <span>Currently Open (<span id="count-tab-open">0</span>)</span>
+        </button>
+        <button onclick="setStatusFilter('UPCOMING')" id="tab-upcoming" class="py-3 px-1 border-b-2 font-medium border-transparent text-gray-500 hover:text-gray-700 transition-colors">
+          Upcoming (<span id="count-tab-upcoming">0</span>)
+        </button>
+        <button onclick="setStatusFilter('ALL')" id="tab-all" class="py-3 px-1 border-b-2 font-medium border-transparent text-gray-500 hover:text-gray-700 transition-colors">
+          All Mainboard (<span id="count-tab-all">0</span>)
+        </button>
+      </nav>
+
+      <!-- Sort & Search -->
+      <div class="py-2 flex items-center gap-2">
+        <div class="flex items-center gap-1.5 shrink-0">
+          <span class="text-[11px] font-semibold text-gray-500">Sort:</span>
+          <select id="sort-select" onchange="onSortChange()" class="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-xs text-gray-800 font-medium focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer">
+            <option value="date" selected>Date (Closing Earliest)</option>
+            <option value="priority">Priority Rank (#1 to #10)</option>
+            <option value="sub">Subscription (Highest First)</option>
+            <option value="gmp">Grey Market GMP %</option>
+          </select>
+        </div>
+        <input type="text" id="search-input" oninput="renderCards()" placeholder="Search company..." class="w-full sm:w-40 bg-gray-50 border border-gray-200 rounded px-2.5 py-1 text-xs text-gray-800 focus:bg-white focus:outline-none focus:border-blue-500" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-5xl mx-auto px-4 py-6 w-full space-y-4">
+
+    <!-- Simple Instructions -->
+    <div class="flex items-center justify-between text-xs text-gray-500 pb-1">
+      <span>Sorted by <strong>Date (closing soonest first)</strong>. Each IPO displays its <strong>Priority Rank (#1, #2...)</strong> for capital allocation.</span>
+      <span class="text-[11px] text-gray-400">Strictly DRHP fundamentals + Live GMP</span>
+    </div>
+
+    <!-- Cards List Container -->
+    <div id="cards-container" class="space-y-3.5">
+      <!-- Cards injected via JS -->
+    </div>
+
+    <!-- Empty State -->
+    <div id="empty-state" class="hidden bg-white border border-gray-200 p-10 text-center rounded-lg">
+      <p class="text-xs text-gray-500">No Mainboard IPOs found in this category.</p>
+    </div>
+
+  </main>
+
+  <!-- Detailed DRHP Financials Modal -->
+  <div id="detail-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/40 p-4">
+    <div class="bg-white border border-gray-200 w-full max-w-2xl rounded-lg max-h-[90vh] flex flex-col shadow-xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+        <div>
+          <h3 id="modal-company-name" class="text-sm font-bold text-gray-900">Company Details</h3>
+          <p id="modal-dates" class="text-[11px] text-gray-500">Bidding: --</p>
+        </div>
+        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-700 p-1">
+          <i class="fa-solid fa-xmark text-sm"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-5 overflow-y-auto space-y-4 text-xs text-gray-700 flex-1">
+        
+        <!-- Summary Points -->
+        <div class="p-3 bg-gray-50 border border-gray-200 rounded space-y-1.5">
+          <span class="font-bold text-gray-900 block text-xs">Top 3 Decision Reasons:</span>
+          <ul id="modal-top3-list" class="space-y-1 text-gray-700"></ul>
+        </div>
+
+        <!-- SEBI DRHP Financials Table -->
+        <div class="space-y-1.5">
+          <span class="font-bold text-gray-900 block text-xs">SEBI DRHP Financial Disclosures (in ₹ Crores):</span>
+          <div class="overflow-x-auto border border-gray-200 rounded">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead class="bg-gray-50 text-[11px] font-semibold text-gray-600">
+                <tr id="modal-fin-head">
+                  <th class="py-2 px-3">Metric</th>
+                </tr>
+              </thead>
+              <tbody id="modal-fin-body" class="divide-y divide-gray-100 font-mono text-[11px]"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-5 py-2.5 border-t border-gray-200 bg-gray-50 flex items-center justify-end">
+        <button onclick="closeModal()" class="px-3 py-1 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded text-xs font-medium">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-gray-200 py-4 text-center text-xs text-gray-400 mt-auto">
+    <div class="max-w-5xl mx-auto px-4">
+      IPO Advisor &bull; Simple, Unbiased, Mathematical Recommendations &bull; SMEs Excluded
+    </div>
+  </footer>
+
+  <script>
+    let allIPOs = [];
+    let currentFilter = 'OPEN';
+    let currentSort = 'date';
+    let selectedIPO = null;
+
+    async function loadIPOs() {
+      try {
+        const res = await fetch(`/api/ipos?sort=${currentSort}`);
+        allIPOs = await res.json();
+        updateStats();
+        renderCards();
+      } catch (e) {
+        console.error("Failed to load IPOs:", e);
+      }
+    }
+
+    function onSortChange() {
+      currentSort = document.getElementById('sort-select').value;
+      renderCards();
+    }
+
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        const updatedTxt = data.last_updated ? `Updated: ${data.last_updated}` : 'Live online';
+        document.getElementById('last-updated-text').textContent = updatedTxt;
+
+        if (data.is_syncing) {
+          document.getElementById('refresh-icon').classList.add('fa-spin');
+        } else {
+          document.getElementById('refresh-icon').classList.remove('fa-spin');
+        }
+      } catch (e) {
+        console.error("Failed to fetch status:", e);
+      }
+    }
+
+    async function triggerRefresh() {
+      const icon = document.getElementById('refresh-icon');
+      icon.classList.add('fa-spin');
+      try {
+        await fetch('/api/refresh', { method: 'POST' });
+        setTimeout(() => {
+          checkStatus();
+          loadIPOs();
+        }, 1500);
+      } catch (e) {
+        console.error("Refresh failed:", e);
+        icon.classList.remove('fa-spin');
+      }
+    }
+
+    function setStatusFilter(status) {
+      currentFilter = status;
+      ['open', 'upcoming', 'all'].forEach(s => {
+        const btn = document.getElementById(`tab-${s}`);
+        if (s.toUpperCase() === status) {
+          btn.className = "py-3 px-1 border-b-2 font-medium tab-active transition-colors flex items-center gap-1.5";
+        } else {
+          btn.className = "py-3 px-1 border-b-2 font-medium border-transparent text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1.5";
+        }
+      });
+      renderCards();
+    }
+
+    function updateStats() {
+      const openCount = allIPOs.filter(x => x.status === 'OPEN').length;
+      const upcomingCount = allIPOs.filter(x => x.status === 'UPCOMING').length;
+
+      document.getElementById('count-tab-open').textContent = openCount;
+      document.getElementById('count-tab-upcoming').textContent = upcomingCount;
+      document.getElementById('count-tab-all').textContent = allIPOs.length;
+    }
+
+    function getBadgeClass(color) {
+      if (color === 'green') return 'badge-green';
+      if (color === 'purple') return 'badge-purple';
+      if (color === 'amber') return 'badge-amber';
+      return 'badge-red';
+    }
+
+    function renderCards() {
+      const container = document.getElementById('cards-container');
+      const emptyState = document.getElementById('empty-state');
+      const query = (document.getElementById('search-input').value || '').toLowerCase().trim();
+
+      let filtered = [...allIPOs];
+      if (currentFilter === 'OPEN') {
+        filtered = filtered.filter(x => x.status === 'OPEN');
+      } else if (currentFilter === 'UPCOMING') {
+        filtered = filtered.filter(x => x.status === 'UPCOMING');
+      }
+
+      if (query) {
+        filtered = filtered.filter(x => x.name.toLowerCase().includes(query));
+      }
+
+      // Sort according to currentSort
+      if (currentSort === 'date') {
+        filtered.sort((a, b) => {
+          const statusOrderA = a.status === 'OPEN' ? 0 : (a.status === 'UPCOMING' ? 1 : 2);
+          const statusOrderB = b.status === 'OPEN' ? 0 : (b.status === 'UPCOMING' ? 1 : 2);
+          if (statusOrderA !== statusOrderB) return statusOrderA - statusOrderB;
+          
+          const dateA = (a.status === 'OPEN' ? a.close_date : a.open_date) || '9999-99-99';
+          const dateB = (b.status === 'OPEN' ? b.close_date : b.open_date) || '9999-99-99';
+          if (dateA !== dateB) return dateA.localeCompare(dateB);
+          
+          return (a.priority_rank || 999) - (b.priority_rank || 999);
+        });
+      } else if (currentSort === 'priority') {
+        filtered.sort((a, b) => (a.priority_rank || 999) - (b.priority_rank || 999));
+      } else if (currentSort === 'sub') {
+        filtered.sort((a, b) => (b.hype?.subscription_times || -1) - (a.hype?.subscription_times || -1));
+      } else if (currentSort === 'gmp') {
+        filtered.sort((a, b) => (b.hype?.gmp_pct || -999) - (a.hype?.gmp_pct || -999));
+      }
+
+      container.innerHTML = '';
+      if (filtered.length === 0) {
+        emptyState.classList.remove('hidden');
+        return;
+      }
+      emptyState.classList.add('hidden');
+
+      const todayStr = '2026-09-10';
+
+      filtered.forEach((ipo, index) => {
+        const card = document.createElement('div');
+        card.className = "card-ipo p-4 bg-white";
+
+        const badgeClass = getBadgeClass(ipo.decision.badge_color);
+        const rank = ipo.priority_rank || (index + 1);
+        const gmpDisplay = ipo.hype.gmp_pct != null ? `${ipo.hype.gmp_pct}%` : '0%';
+        const gmpRs = ipo.hype.gmp_rs ? `₹${ipo.hype.gmp_rs}` : '₹0';
+        const isAvoid = (ipo.decision.badge_color === 'red');
+
+        // Date Urgency Badge
+        let dateBadge = '';
+        if (ipo.status === 'OPEN') {
+          if (ipo.close_date === todayStr) {
+            dateBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 uppercase tracking-wide shrink-0"><i class="fa-solid fa-clock mr-1"></i>Closes Today</span>`;
+          } else if (ipo.close_date === '2026-09-11') {
+            dateBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200 shrink-0"><i class="fa-regular fa-clock mr-1"></i>Closes Tomorrow</span>`;
+          } else {
+            dateBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700 border border-gray-200 shrink-0">Closes ${ipo.close_date || 'TBD'}</span>`;
+          }
+        } else if (ipo.status === 'UPCOMING') {
+          dateBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 shrink-0">Opens ${ipo.open_date || 'TBD'}</span>`;
+        }
+
+        // Top 3 reasons
+        const reasons = (ipo.top_3_reasons && ipo.top_3_reasons.length > 0) ? ipo.top_3_reasons : ipo.decision.key_points;
+        const reasonsList = (reasons || []).slice(0, 3).map((r, i) => {
+          const icon = isAvoid 
+            ? '<i class="fa-solid fa-circle-xmark text-red-500 text-[11px] mt-0.5 shrink-0"></i>'
+            : '<i class="fa-solid fa-circle-check text-green-600 text-[11px] mt-0.5 shrink-0"></i>';
+          return `<li class="flex items-start gap-2 text-xs text-gray-700">
+                    ${icon}
+                    <span>${r}</span>
+                  </li>`;
+        }).join('');
+
+        const allotmentChance = ipo.allotment_chance || ipo.decision.allotment_chance || "Awaiting bid data";
+
+        card.innerHTML = `
+          <div class="space-y-3">
+            <!-- Header Row: Priority Rank + Date Badge + Company Name + Verdict Badge -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
+              <div class="flex items-center gap-2.5 flex-wrap">
+                <span class="px-2 py-0.5 rounded bg-gray-900 text-white font-bold text-xs shrink-0" title="Investment Quality Priority Rank">
+                  Rank #${rank}
+                </span>
+                ${dateBadge}
+                <div>
+                  <h2 class="text-sm font-bold text-gray-900 tracking-tight">${ipo.name}</h2>
+                  <div class="text-[11px] text-gray-500">
+                    Price: <strong>₹${ipo.price || 'TBD'}</strong> &bull; 
+                    Lot: <strong>${ipo.lot_size || '--'} shs</strong> &bull; 
+                    Closes: <strong>${ipo.close_date || 'TBD'}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="text-xs px-2.5 py-1 rounded font-semibold ${badgeClass}">
+                  ${ipo.decision.verdict}
+                </span>
+              </div>
+            </div>
+
+            <!-- Allotment Chance & Subscription & GMP Banner -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-gray-50 p-2.5 rounded border border-gray-100">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-gray-500 font-medium">Allotment Chance:</span>
+                <span class="font-bold text-gray-900">${allotmentChance}</span>
+              </div>
+              <div class="flex items-center gap-2 sm:justify-end">
+                <span class="text-gray-500 font-medium">Grey Market GMP:</span>
+                <span class="font-bold ${ipo.hype.gmp_pct >= 20 ? 'text-green-700' : 'text-gray-900'}">
+                  ${gmpDisplay} (${gmpRs})
+                </span>
+              </div>
+            </div>
+
+            <!-- Top 3 Reasons WHY -->
+            <div class="pt-1">
+              <span class="text-[11px] font-bold text-gray-800 uppercase tracking-wider block mb-1.5">
+                ${isAvoid ? 'Top 3 Reasons to Avoid:' : 'Top 3 Reasons to Apply:'}
+              </span>
+              <ul class="space-y-1.5">
+                ${reasonsList}
+              </ul>
+            </div>
+
+            <!-- Detail Modal Trigger -->
+            <div class="pt-2 border-t border-gray-100 flex items-center justify-end">
+              <button onclick="openModal(${ipo.id})" class="text-blue-600 hover:text-blue-800 text-[11px] font-semibold flex items-center gap-1">
+                <span>View Balance Sheet & DRHP Financials</span>
+                <i class="fa-solid fa-arrow-right text-[9px]"></i>
+              </button>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function openModal(ipoId) {
+      selectedIPO = allIPOs.find(x => x.id === ipoId);
+      if (!selectedIPO) return;
+
+      document.getElementById('modal-company-name').textContent = selectedIPO.name;
+      document.getElementById('modal-dates').textContent = `Bidding: ${selectedIPO.open_date || 'TBD'} to ${selectedIPO.close_date || 'TBD'} | Listing: ${selectedIPO.listing_date || 'TBD'}`;
+
+      const reasons = (selectedIPO.top_3_reasons && selectedIPO.top_3_reasons.length > 0) ? selectedIPO.top_3_reasons : selectedIPO.decision.key_points;
+      const reasonsList = (reasons || []).map(r => `<li class="text-xs text-gray-700">&bull; ${r}</li>`).join('');
+      document.getElementById('modal-top3-list').innerHTML = reasonsList;
+
+      // Financials table
+      const headRow = document.getElementById('modal-fin-head');
+      const body = document.getElementById('modal-fin-body');
+      headRow.innerHTML = '<th class="py-2 px-3">Metric (₹ in Crores)</th>';
+      body.innerHTML = '';
+
+      if (selectedIPO.financials && selectedIPO.financials.length > 0) {
+        selectedIPO.financials.forEach(f => {
+          const th = document.createElement('th');
+          th.className = 'py-2 px-3';
+          th.textContent = f.period;
+          headRow.appendChild(th);
+        });
+
+        const rowsConfig = [
+          { label: 'Total Revenue', key: 'revenue_cr' },
+          { label: 'Profit After Tax (PAT)', key: 'pat_cr' },
+          { label: 'Net Worth', key: 'net_worth_cr' },
+          { label: 'Total Assets', key: 'assets_cr' },
+          { label: 'Borrowings', key: 'borrowing_cr' }
+        ];
+
+        rowsConfig.forEach(cfg => {
+          const tr = document.createElement('tr');
+          let html = `<td class="py-1.5 px-3 font-semibold text-gray-700 font-sans">${cfg.label}</td>`;
+          selectedIPO.financials.forEach(f => {
+            const val = f[cfg.key];
+            const displayVal = val != null ? val.toLocaleString('en-IN') : '--';
+            html += `<td class="py-1.5 px-3 text-gray-800">${displayVal}</td>`;
+          });
+          tr.innerHTML = html;
+          body.appendChild(tr);
+        });
+      } else {
+        headRow.innerHTML += '<th class="py-2 px-3">Prospectus Disclosure</th>';
+        body.innerHTML = '<tr><td colspan="2" class="py-3 px-3 text-center text-gray-400">Prospectus financials parsing in progress.</td></tr>';
+      }
+
+      document.getElementById('detail-modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('detail-modal').classList.add('hidden');
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    loadIPOs();
+    checkStatus();
+    setInterval(checkStatus, 15000);
+  </script>
+</body>
+</html>

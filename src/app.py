@@ -128,6 +128,19 @@ def get_system_status():
         "stats": stats
     }
 
+from fastapi.responses import HTMLResponse
+
+@app.get("/", response_class=HTMLResponse)
+def serve_index():
+    """Serves the Zerodha-style IPO dashboard frontend"""
+    index_file = FRONTEND_DIR / "index.html"
+    if not index_file.exists():
+        index_file = Path(__file__).resolve().parent.parent / "index.html"
+    if index_file.exists():
+        with open(index_file, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>IPO Advisor</h1><p>Frontend loading...</p>")
+
 # Mount static frontend directory
 if FRONTEND_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
